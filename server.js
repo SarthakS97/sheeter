@@ -28,24 +28,33 @@ try {
 
 const db = admin.firestore();
 
-// Middleware
-app.use(express.json());
-app.use(express.static('public'));
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'your-session-secret-' + Math.random(),
+// Session configuration for production
+const sessionConfig = {
+    secret: process.env.SESSION_SECRET || 'your-session-secret-' + crypto.randomBytes(16).toString('hex'),
     resave: false,
     saveUninitialized: false,
     cookie: { 
-        secure: process.env.NODE_ENV === 'production', // Only secure in production
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        httpOnly: true
     }
-}));
+};
+
+// Add session store for production to avoid MemoryStore warning
+if (process.env.NODE_ENV === 'production') {
+    console.log('🔄 Using memory store for sessions (consider upgrading to Redis for production)');
+}
+
+// Middleware
+app.use(express.json());
+app.use(express.static('public'));
+app.use(session(sessionConfig));
 
 // Google OAuth Configuration
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const BASE_URL = process.env.NODE_ENV === 'production'
-    ? process.env.BASE_URL || 'https://sheeter-lb5v.onrender.com'
+    ? process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || 'https://sheeter-lb5v.onrender.com'
     : `http://localhost:${PORT}`;
 const REDIRECT_URI = `${BASE_URL}/auth/callback`;
 const SCOPES = [
@@ -77,25 +86,43 @@ if (missingVars.length > 0) {
 // Create OAuth2 client
 const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
 
-// Encryption functions
+// FIXED: Encryption functions using createCipheriv (NOT createCipher)
 function encrypt(text) {
+    console.log('🔐 Starting encryption process...');
+    
     if (!ENCRYPTION_KEY) {
         throw new Error('ENCRYPTION_KEY is not configured');
     }
     
-    const key = Buffer.from(ENCRYPTION_KEY, 'base64');
-    if (key.length !== 32) {
-        throw new Error('ENCRYPTION_KEY must be a 32-byte key encoded in base64');
+    try {
+        const key = Buffer.from(ENCRYPTION_KEY, 'base64');
+        console.log(`🔑 Key decoded successfully: ${key.length} bytes`);
+        
+        if (key.length !== 32) {
+            throw new Error(`ENCRYPTION_KEY must decode to 32 bytes, got ${key.length} bytes`);
+        }
+        
+        const iv = crypto.randomBytes(16);
+        console.log('🎲 Generated IV for encryption');
+        
+        // CRITICAL: Using createCipheriv (NOT createCipher)
+        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        
+        console.log('✅ Encryption successful');
+        return {
+            encrypted,
+            iv: iv.toString('hex')
+        };
+    } catch (error) {
+        console.error('❌ Encryption failed:', {
+            error: error.message,
+            keyLength: ENCRYPTION_KEY ? ENCRYPTION_KEY.length : 'undefined',
+            keyPreview: ENCRYPTION_KEY ? `${ENCRYPTION_KEY.substring(0, 8)}...` : 'undefined'
+        });
+        throw error;
     }
-    
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher('aes-256-cbc', key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return {
-        encrypted,
-        iv: iv.toString('hex')
-    };
 }
 
 function decrypt(encryptedData) {
@@ -103,12 +130,19 @@ function decrypt(encryptedData) {
         throw new Error('ENCRYPTION_KEY is not configured');
     }
     
-    const key = Buffer.from(ENCRYPTION_KEY, 'base64');
-    const iv = Buffer.from(encryptedData.iv, 'hex');
-    const decipher = crypto.createDecipher('aes-256-cbc', key, iv);
-    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
+    try {
+        const key = Buffer.from(ENCRYPTION_KEY, 'base64');
+        const iv = Buffer.from(encryptedData.iv, 'hex');
+        
+        // CRITICAL: Using createDecipheriv (NOT createDecipher)
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+    } catch (error) {
+        console.error('❌ Decryption error:', error.message);
+        throw error;
+    }
 }
 
 // Generate secure API key
@@ -121,53 +155,49 @@ function generateUserId(email) {
     return crypto.createHash('sha256').update(email).digest('hex').substring(0, 16);
 }
 
-// Refresh Google tokens if needed
-async function refreshTokensIfNeeded(user) {
-    try {
-        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
-        userOAuth2Client.setCredentials({
-            access_token: user.accessToken,
-            refresh_token: user.refreshToken
-        });
+// Debug configuration on startup
+console.log('🔧 Configuration Status:');
+console.log('🌍 Environment:', process.env.NODE_ENV || 'development');
+console.log('📍 Base URL:', BASE_URL);
+console.log('🔗 Redirect URI:', REDIRECT_URI);
+console.log('📍 Google OAuth configured:', !!(CLIENT_ID && CLIENT_SECRET));
+console.log('🔥 Firebase configured:', !!process.env.FIREBASE_PROJECT_ID);
 
-        // Check if token needs refresh by making a test call
-        const oauth2 = google.oauth2({ version: 'v2', auth: userOAuth2Client });
-        await oauth2.userinfo.get();
-
-        return user; // Token is still valid
-    } catch (error) {
-        if (error.code === 401 && user.refreshToken) {
-            // Token expired, refresh it
-            try {
-                const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
-                userOAuth2Client.setCredentials({
-                    refresh_token: user.refreshToken
-                });
-
-                const { credentials } = await userOAuth2Client.refreshAccessToken();
-                
-                // Update user tokens in database
-                const userId = generateUserId(user.email);
-                const userRef = db.collection('user-credentials').doc(userId);
-                const encryptedTokens = encrypt(JSON.stringify(credentials));
-                
-                await userRef.update({
-                    encryptedTokens: encryptedTokens,
-                    lastAccess: admin.firestore.FieldValue.serverTimestamp()
-                });
-
-                return {
-                    ...user,
-                    accessToken: credentials.access_token,
-                    refreshToken: credentials.refresh_token || user.refreshToken
-                };
-            } catch (refreshError) {
-                console.error('❌ Token refresh failed:', refreshError);
-                throw new Error('Authentication expired. Please re-authenticate.');
-            }
-        }
-        throw error;
+// Test encryption key
+try {
+    if (!ENCRYPTION_KEY) {
+        throw new Error('ENCRYPTION_KEY is missing from environment variables');
     }
+    
+    console.log(`🔑 ENCRYPTION_KEY found: ${ENCRYPTION_KEY.length} characters`);
+    
+    const key = Buffer.from(ENCRYPTION_KEY, 'base64');
+    console.log(`🔓 Decoded key length: ${key.length} bytes`);
+    
+    if (key.length !== 32) {
+        throw new Error(`ENCRYPTION_KEY must be 32 bytes when decoded, got ${key.length} bytes`);
+    }
+    
+    // Test encryption/decryption
+    const testData = 'test-encryption';
+    const encrypted = encrypt(testData);
+    const decrypted = decrypt(encrypted);
+    
+    if (decrypted !== testData) {
+        throw new Error('Encryption test failed');
+    }
+    
+    console.log('✅ Encryption key is valid and working');
+} catch (error) {
+    console.error('❌ ENCRYPTION_KEY ERROR:', error.message);
+    
+    // Generate a new key for reference
+    const newKey = crypto.randomBytes(32).toString('base64');
+    console.error('💡 Fix by setting this key in your Render environment:');
+    console.error(`   ENCRYPTION_KEY=${newKey}`);
+    console.error('   The key should be exactly 44 characters long.');
+    
+    process.exit(1);
 }
 
 // Get or create user API key
@@ -179,10 +209,7 @@ async function getOrCreateUserApiKey(email, googleTokens) {
         const doc = await userRef.get();
 
         if (doc.exists) {
-            // User exists, update tokens but keep same API key
             const userData = doc.data();
-
-            // Encrypt new tokens
             const encryptedTokens = encrypt(JSON.stringify(googleTokens));
 
             await userRef.update({
@@ -195,7 +222,6 @@ async function getOrCreateUserApiKey(email, googleTokens) {
             return userData.apiKey;
 
         } else {
-            // New user, create new API key
             const apiKey = generateApiKey();
             const apiKeyHash = await bcrypt.hash(apiKey, 12);
             const encryptedTokens = encrypt(JSON.stringify(googleTokens));
@@ -233,7 +259,6 @@ async function authenticateApiKey(req, res, next) {
     const apiKey = authHeader.substring(7);
 
     try {
-        // Query Firestore for the API key
         const snapshot = await db.collection('user-credentials')
             .where('apiKey', '==', apiKey)
             .limit(1)
@@ -245,16 +270,12 @@ async function authenticateApiKey(req, res, next) {
 
         const userDoc = snapshot.docs[0];
         const userData = userDoc.data();
-
-        // Decrypt Google tokens
         const googleTokens = JSON.parse(decrypt(userData.encryptedTokens));
 
-        // Update last access time
         await userDoc.ref.update({
             lastAccess: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // Attach user data to request
         req.user = {
             userId: userData.userId,
             email: userData.email,
@@ -270,63 +291,31 @@ async function authenticateApiKey(req, res, next) {
     }
 }
 
-// Debug configuration on startup
-console.log('🔧 Configuration Status:');
-try {
-    if (!ENCRYPTION_KEY) {
-        throw new Error('ENCRYPTION_KEY is missing');
-    }
-    const key = Buffer.from(ENCRYPTION_KEY, 'base64');
-    if (key.length !== 32) {
-        throw new Error(`ENCRYPTION_KEY must be 32 bytes, got ${key.length} bytes`);
-    }
-    console.log('✅ Encryption key valid');
-} catch (error) {
-    console.error('❌ ERROR: Invalid ENCRYPTION_KEY:', error.message);
-    console.error('💡 To fix, run this command in your terminal to generate a valid key:');
-    console.error("  node -e \"console.log(require('crypto').randomBytes(32).toString('base64'));\"");
-    console.error('  Then update the ENCRYPTION_KEY in your .env file and restart the server.');
-    console.error('  Example .env entry: ENCRYPTION_KEY=abcd1234...');
-    process.exit(1);
-}
-console.log('📍 Google OAuth configured:', !!(CLIENT_ID && CLIENT_SECRET));
-console.log('🔐 Encryption configured:', !!ENCRYPTION_KEY);
-console.log('🔥 Firebase configured:', !!process.env.FIREBASE_PROJECT_ID);
-console.log('🔗 Redirect URI:', REDIRECT_URI);
-
-// Serve main HTML page
+// Routes
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Check authentication status
 app.get('/auth/status', (req, res) => {
     const hasSession = !!req.session.accessToken;
-    const apiKey = req.session.apiKey;
-    const userEmail = req.session.userEmail;
-
     res.json({
         authenticated: hasSession,
         hasAccess: hasSession,
-        apiKey: apiKey,
-        userEmail: userEmail
+        apiKey: req.session.apiKey,
+        userEmail: req.session.userEmail
     });
 });
 
-// Start OAuth flow
 app.get('/auth/google', (req, res) => {
     console.log('🔄 Starting OAuth flow...');
-
     const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: SCOPES,
         prompt: 'consent'
     });
-
     res.redirect(authUrl);
 });
 
-// Handle OAuth callback
 app.get('/auth/callback', async (req, res) => {
     const { code, error } = req.query;
 
@@ -340,10 +329,9 @@ app.get('/auth/callback', async (req, res) => {
     }
 
     try {
-        // Exchange code for tokens
+        console.log('🔄 Exchanging code for tokens...');
         const { tokens } = await oauth2Client.getToken(code);
 
-        // Create authenticated client to get user info
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials(tokens);
 
@@ -357,17 +345,15 @@ app.get('/auth/callback', async (req, res) => {
 
         console.log(`✅ User authenticated: ${userEmail}`);
 
-        // Get or create API key for this user
         const apiKey = await getOrCreateUserApiKey(userEmail, tokens);
 
-        // Store in session
         req.session.accessToken = tokens.access_token;
         req.session.refreshToken = tokens.refresh_token;
         req.session.apiKey = apiKey;
         req.session.userEmail = userEmail;
         req.session.userId = generateUserId(userEmail);
 
-        console.log(`✅ API key ready for ${userEmail}: ${apiKey.substring(0, 20)}...`);
+        console.log(`✅ Session created for ${userEmail}`);
         res.redirect('/?success=true');
 
     } catch (error) {
@@ -376,12 +362,10 @@ app.get('/auth/callback', async (req, res) => {
     }
 });
 
-// Revoke access
 app.post('/auth/revoke', async (req, res) => {
     const userEmail = req.session.userEmail;
 
     if (req.session.accessToken) {
-        // Revoke Google token
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.session.accessToken,
@@ -392,11 +376,10 @@ app.post('/auth/revoke', async (req, res) => {
             await userOAuth2Client.revokeCredentials();
             console.log('✅ Google tokens revoked');
         } catch (error) {
-            console.log('⚠️ Token revocation failed (may already be invalid):', error.message);
+            console.log('⚠️ Token revocation failed:', error.message);
         }
     }
 
-    // Delete user credentials from Firebase
     if (userEmail) {
         try {
             const userId = generateUserId(userEmail);
@@ -407,17 +390,14 @@ app.post('/auth/revoke', async (req, res) => {
         }
     }
 
-    // Clear session
     req.session.destroy((err) => {
-        if (err) {
-            console.error('❌ Session destruction error:', err);
-        }
+        if (err) console.error('❌ Session destruction error:', err);
     });
 
     res.json({ success: true, message: 'Access revoked and API key deleted' });
 });
 
-// Test Google Sheets access (session-based)
+// API Endpoints
 app.get('/api/test', async (req, res) => {
     if (!req.session.accessToken) {
         return res.status(401).json({ error: 'Not authenticated' });
@@ -433,10 +413,7 @@ app.get('/api/test', async (req, res) => {
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
         const sheetId = '1lEwSquAnh7vNDUgk36isQio31Nc-JeBVBKtxXyjY8Vo';
 
-        const metadataResponse = await sheets.spreadsheets.get({
-            spreadsheetId: sheetId
-        });
-
+        const metadataResponse = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
         const dataResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: sheetId,
             range: 'A1:Z10'
@@ -449,7 +426,6 @@ app.get('/api/test', async (req, res) => {
             rowCount: dataResponse.data.values?.length || 0,
             sampleData: dataResponse.data.values?.slice(0, 5) || [],
             message: 'Session access working!',
-            apiKey: req.session.apiKey ? `${req.session.apiKey.substring(0, 20)}...` : null,
             userEmail: req.session.userEmail
         });
 
@@ -463,13 +439,8 @@ app.get('/api/test', async (req, res) => {
     }
 });
 
-// Test API key access (what MCP will use)
 app.get('/api/test-key', authenticateApiKey, async (req, res) => {
     try {
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
-
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
@@ -479,10 +450,7 @@ app.get('/api/test-key', authenticateApiKey, async (req, res) => {
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
         const sheetId = '1lEwSquAnh7vNDUgk36isQio31Nc-JeBVBKtxXyjY8Vo';
 
-        const metadataResponse = await sheets.spreadsheets.get({
-            spreadsheetId: sheetId
-        });
-
+        const metadataResponse = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
         const dataResponse = await sheets.spreadsheets.values.get({
             spreadsheetId: sheetId,
             range: 'A1:Z10'
@@ -494,7 +462,7 @@ app.get('/api/test-key', authenticateApiKey, async (req, res) => {
             sheetId: sheetId,
             rowCount: dataResponse.data.values?.length || 0,
             sampleData: dataResponse.data.values?.slice(0, 3) || [],
-            message: `API key authentication successful!`,
+            message: 'API key authentication successful!',
             authenticatedAs: req.user.email
         });
 
@@ -503,28 +471,18 @@ app.get('/api/test-key', authenticateApiKey, async (req, res) => {
         res.status(500).json({
             success: false,
             error: error.message,
-            code: error.code,
             authenticatedAs: req.user.email
         });
     }
 });
 
-// --- SHEETS API ENDPOINTS ---
-
-/**
- * @endpoint POST /api/sheets/create
- * @description Creates a new Google Spreadsheet.
- */
+// Sheets API endpoints
 app.post('/api/sheets/create', authenticateApiKey, async (req, res) => {
     try {
         const { title } = req.body;
         if (!title) {
             return res.status(400).json({ error: 'Spreadsheet title is required.' });
         }
-
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
 
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
@@ -533,13 +491,8 @@ app.post('/api/sheets/create', authenticateApiKey, async (req, res) => {
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
-
         const response = await sheets.spreadsheets.create({
-            resource: {
-                properties: {
-                    title: title
-                }
-            }
+            resource: { properties: { title } }
         });
 
         res.json({
@@ -555,18 +508,10 @@ app.post('/api/sheets/create', authenticateApiKey, async (req, res) => {
     }
 });
 
-/**
- * @endpoint GET /api/sheets/:sheetId
- * @description Reads values from a specific sheet and range.
- */
 app.get('/api/sheets/:sheetId', authenticateApiKey, async (req, res) => {
     try {
         const { sheetId } = req.params;
         const { range = 'A:Z' } = req.query;
-
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
 
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
@@ -575,7 +520,6 @@ app.get('/api/sheets/:sheetId', authenticateApiKey, async (req, res) => {
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
-
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: sheetId,
             range: range
@@ -609,10 +553,6 @@ app.get('/api/sheets/:sheetId', authenticateApiKey, async (req, res) => {
     }
 });
 
-/**
- * @endpoint POST /api/sheets/:sheetId/append
- * @description Appends new values to a sheet.
- */
 app.post('/api/sheets/:sheetId/append', authenticateApiKey, async (req, res) => {
     try {
         const { sheetId } = req.params;
@@ -622,10 +562,6 @@ app.post('/api/sheets/:sheetId/append', authenticateApiKey, async (req, res) => 
             return res.status(400).json({ error: 'Values must be a valid array of arrays.' });
         }
 
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
-
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
@@ -633,14 +569,11 @@ app.post('/api/sheets/:sheetId/append', authenticateApiKey, async (req, res) => 
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
-
         const response = await sheets.spreadsheets.values.append({
             spreadsheetId: sheetId,
             range: 'A1',
             valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: values
-            }
+            requestBody: { values }
         });
 
         res.json({
@@ -651,17 +584,10 @@ app.post('/api/sheets/:sheetId/append', authenticateApiKey, async (req, res) => 
 
     } catch (error) {
         console.error('❌ Append data failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-/**
- * @endpoint PUT /api/sheets/:sheetId/values
- * @description Updates a specific cell or range with new values.
- */
 app.put('/api/sheets/:sheetId/values', authenticateApiKey, async (req, res) => {
     try {
         const { sheetId } = req.params;
@@ -671,10 +597,6 @@ app.put('/api/sheets/:sheetId/values', authenticateApiKey, async (req, res) => {
             return res.status(400).json({ error: 'Range and values (array of arrays) are required.' });
         }
 
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
-
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
@@ -682,14 +604,11 @@ app.put('/api/sheets/:sheetId/values', authenticateApiKey, async (req, res) => {
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
-
         const response = await sheets.spreadsheets.values.update({
             spreadsheetId: sheetId,
             range: range,
             valueInputOption: 'USER_ENTERED',
-            requestBody: {
-                values: values
-            }
+            requestBody: { values }
         });
 
         res.json({
@@ -701,17 +620,10 @@ app.put('/api/sheets/:sheetId/values', authenticateApiKey, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Update values failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-/**
- * @endpoint POST /api/sheets/:sheetId/batch-update
- * @description Performs multiple update operations on a sheet in a single request.
- */
 app.post('/api/sheets/:sheetId/batch-update', authenticateApiKey, async (req, res) => {
     try {
         const { sheetId } = req.params;
@@ -721,10 +633,6 @@ app.post('/api/sheets/:sheetId/batch-update', authenticateApiKey, async (req, re
             return res.status(400).json({ error: 'Requests must be a valid array.' });
         }
 
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
-
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
@@ -732,7 +640,6 @@ app.post('/api/sheets/:sheetId/batch-update', authenticateApiKey, async (req, re
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
-
         const response = await sheets.spreadsheets.batchUpdate({
             spreadsheetId: sheetId,
             requestBody: { requests }
@@ -746,17 +653,10 @@ app.post('/api/sheets/:sheetId/batch-update', authenticateApiKey, async (req, re
 
     } catch (error) {
         console.error('❌ Batch update failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-/**
- * @endpoint DELETE /api/sheets/:sheetId/rows
- * @description Deletes a specific range of rows from a sheet.
- */
 app.delete('/api/sheets/:sheetId/rows', authenticateApiKey, async (req, res) => {
     try {
         const { sheetId } = req.params;
@@ -768,10 +668,6 @@ app.delete('/api/sheets/:sheetId/rows', authenticateApiKey, async (req, res) => 
             });
         }
 
-        // Refresh tokens if needed
-        const refreshedUser = await refreshTokensIfNeeded(req.user);
-        req.user = refreshedUser;
-
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
@@ -779,7 +675,6 @@ app.delete('/api/sheets/:sheetId/rows', authenticateApiKey, async (req, res) => 
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
-
         const request = {
             deleteDimension: {
                 range: {
@@ -804,14 +699,11 @@ app.delete('/api/sheets/:sheetId/rows', authenticateApiKey, async (req, res) => 
 
     } catch (error) {
         console.error('❌ Delete rows failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// Global error handler
+// Error handlers
 app.use((err, req, res, next) => {
     console.error('❌ Server error:', err);
     res.status(500).json({ 
@@ -820,7 +712,6 @@ app.use((err, req, res, next) => {
     });
 });
 
-// 404 handler
 app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
 });
@@ -838,8 +729,7 @@ process.on('SIGINT', () => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 Sheeter API running on http://localhost:${PORT}`);
-    console.log(`🔗 OAuth redirect URI: ${REDIRECT_URI}`);
-    console.log('📋 Make sure to add this redirect URI to Google Console');
+    console.log(`🚀 Sheeter API running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log('🔥 Ready to handle requests!');
 });
