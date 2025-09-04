@@ -145,6 +145,17 @@
             border: 1px solid #ef4444;
             color: #991b1b;
         }
+        .debug-info {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            font-family: monospace;
+            font-size: 0.8rem;
+            text-align: left;
+            color: #0c4a6e;
+        }
     </style>
 </head>
 <body>
@@ -167,6 +178,12 @@
             </div>
 
             <div id="alerts"></div>
+            
+            <!-- Debug Information -->
+            <div id="debugInfo" class="debug-info" style="display: none;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Debug Information:</div>
+                <div id="debugContent"></div>
+            </div>
 
             <div id="accessStatus" class="status-card">
                 <div class="status-icon">❌</div>
@@ -204,6 +221,9 @@
                 <button id="testKeyBtn" class="btn btn-primary" style="display: none;">
                     🔑 Test API Key
                 </button>
+                <button id="debugBtn" class="btn btn-primary">
+                    🐛 Toggle Debug
+                </button>
             </div>
 
             <div class="loading" id="loading">Processing...</div>
@@ -240,6 +260,7 @@
         let userApiKey = null;
         let userEmail = null;
         let firebaseUser = null;
+        let debugMode = false;
 
         // DOM elements
         const homeScreen = document.getElementById('homeScreen');
@@ -252,17 +273,46 @@
         const testKeyBtn = document.getElementById('testKeyBtn');
         const backHomeBtn = document.getElementById('backHomeBtn');
         const alerts = document.getElementById('alerts');
-        const testWriteBtn = document.getElementById('testWriteBtn');
+        const debugBtn = document.getElementById('debugBtn');
+        const debugInfo = document.getElementById('debugInfo');
+        const debugContent = document.getElementById('debugContent');
+
+        // Debug function
+        function debug(message, data = null) {
+            console.log(`🐛 ${message}`, data || '');
+            if (debugMode) {
+                const timestamp = new Date().toLocaleTimeString();
+                const debugLine = `[${timestamp}] ${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}`;
+                debugContent.textContent = debugLine + '\n\n' + debugContent.textContent;
+            }
+        }
+
+        function toggleDebug() {
+            debugMode = !debugMode;
+            debugInfo.style.display = debugMode ? 'block' : 'none';
+            debugBtn.textContent = debugMode ? '🐛 Hide Debug' : '🐛 Show Debug';
+            if (debugMode) {
+                debug('Debug mode enabled');
+                debug('Current state', {
+                    hasAccess,
+                    userApiKey: userApiKey ? userApiKey.substring(0, 20) + '...' : null,
+                    userEmail,
+                    firebaseUser: firebaseUser ? firebaseUser.email : null
+                });
+            }
+        }
 
         // Firebase Authentication State Listener
         onAuthStateChanged(auth, (user) => {
             firebaseUser = user;
+            debug('Firebase auth state changed', { user: user ? user.email : null });
             updateUIBasedOnAuth();
         });
 
         function updateUIBasedOnAuth() {
+            debug('Updating UI based on auth state');
+            
             if (firebaseUser) {
-                // If user is logged in, show the main screen
                 homeScreen.style.display = 'none';
                 mainScreen.style.display = 'block';
 
@@ -281,9 +331,11 @@
                     </div>
                 `;
                 document.getElementById('signOutBtn').addEventListener('click', signOutFirebase);
-                checkAuthStatus(); // Check the API access status when the user is logged in
+                
+                // Check API access status when user is logged in
+                debug('Firebase user logged in, checking backend auth status');
+                checkAuthStatus();
             } else {
-                // If no user is logged in, show the home screen
                 homeScreen.style.display = 'block';
                 mainScreen.style.display = 'none';
 
@@ -317,14 +369,16 @@
         async function signInWithFirebase() {
             try {
                 document.getElementById('homeLoading').style.display = 'block';
+                debug('Starting Firebase sign in');
                 
                 const result = await signInWithPopup(auth, provider);
                 firebaseUser = result.user;
                 
-                console.log('✅ Firebase sign in successful:', firebaseUser.email);
+                debug('Firebase sign in successful', { email: firebaseUser.email });
                 showAlert(`✅ Signed in as ${firebaseUser.email}`, 'success');
                 
             } catch (error) {
+                debug('Firebase sign in error', error);
                 console.error('❌ Firebase sign in error:', error);
                 let errorMessage = 'Sign in failed';
                 
@@ -348,26 +402,51 @@
                 hasAccess = false;
                 userApiKey = null;
                 userEmail = null;
-                console.log('✅ Firebase sign out successful');
+                debug('Firebase sign out successful');
                 showAlert('✅ Signed out successfully', 'success');
                 goToHomeScreen();
             } catch (error) {
-                console.error('❌ Sign out error:', error);
+                debug('Sign out error', error);
                 showAlert('❌ Sign out failed', 'error');
             }
         }
 
-        // Check authentication status
+        // Check authentication status with backend
         async function checkAuthStatus() {
             try {
-                const response = await fetch('/auth/status');
+                debug('Checking backend auth status...');
+                
+                const response = await fetch('/auth/status', {
+                    method: 'GET',
+                    credentials: 'include', // Important for session cookies
+                    headers: {
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                
+                debug('Auth status response', {
+                    status: response.status,
+                    statusText: response.statusText
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
-                hasAccess = data.hasAccess;
+                
+                debug('Auth status data received', data);
+                
+                hasAccess = data.hasAccess || data.authenticated;
                 userApiKey = data.apiKey;
                 userEmail = data.userEmail;
+                
                 updateAccessStatus();
+                
             } catch (error) {
+                debug('Error checking auth status', error);
                 console.error('Error checking auth status:', error);
+                showAlert(`❌ Error checking status: ${error.message}`, 'error');
             }
         }
 
@@ -378,7 +457,10 @@
                 return;
             }
             
+            debug('Starting OAuth flow to grant access');
             document.getElementById('loading').style.display = 'block';
+            
+            // Redirect to backend OAuth
             window.location.href = '/auth/google';
         }
 
@@ -387,14 +469,17 @@
             if (!hasAccess) return;
 
             try {
+                debug('Revoking access...');
                 document.getElementById('loading').style.display = 'block';
                 
                 const response = await fetch('/auth/revoke', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
                 });
 
                 const data = await response.json();
+                debug('Revoke response', data);
                 
                 if (data.success) {
                     hasAccess = false;
@@ -407,7 +492,7 @@
                 }
 
             } catch (error) {
-                console.error('Error revoking access:', error);
+                debug('Error revoking access', error);
                 showAlert('Error revoking access', 'error');
             }
 
@@ -422,10 +507,15 @@
             }
 
             try {
+                debug('Testing session access...');
                 document.getElementById('loading').style.display = 'block';
                 
-                const response = await fetch('/api/test');
+                const response = await fetch('/api/test', {
+                    credentials: 'include'
+                });
                 const data = await response.json();
+                
+                debug('Test session response', data);
 
                 const testResults = document.getElementById('testResults');
                 
@@ -436,7 +526,6 @@ Sheet Name: ${data.sheetName}
 Sheet ID: ${data.sheetId}
 Rows Found: ${data.rowCount}
 Authenticated As: ${data.userEmail}
-API Key: ${data.apiKey}
 
 Sample Data:
 ${data.sampleData.map((row, i) => `Row ${i + 1}: [${row.join(', ')}]`).join('\n')}
@@ -458,14 +547,14 @@ Code: ${data.code || 'Unknown'}`;
                 testResults.style.display = 'block';
 
             } catch (error) {
-                console.error('Error testing access:', error);
+                debug('Error testing session access', error);
                 showAlert('Network error during test', 'error');
             }
 
             document.getElementById('loading').style.display = 'none';
         }
 
-        // Test API Key access (what MCP will use)
+        // Test API Key access
         async function testApiKey() {
             if (!hasAccess || !userApiKey) {
                 alert('Please grant access first to get an API key');
@@ -473,6 +562,7 @@ Code: ${data.code || 'Unknown'}`;
             }
 
             try {
+                debug('Testing API key access...', { keyPreview: userApiKey.substring(0, 20) + '...' });
                 document.getElementById('loading').style.display = 'block';
                 
                 const response = await fetch('/api/test-key', {
@@ -482,7 +572,13 @@ Code: ${data.code || 'Unknown'}`;
                     }
                 });
                 
+                debug('Test API key response', {
+                    status: response.status,
+                    statusText: response.statusText
+                });
+                
                 const data = await response.json();
+                debug('Test API key data', data);
 
                 const testResults = document.getElementById('testResults');
                 
@@ -496,22 +592,13 @@ Sheet ID: ${data.sheetId}
 Rows Found: ${data.rowCount}
 Authenticated As: ${data.authenticatedAs}
 
-📝 WRITE TEST: ${data.writeTest ? (data.writeTest.success ? '✅ PASSED' : '❌ FAILED') : '❓ NOT STARTED'}
-${data.writeTest ? `
-Message: ${data.writeTest.message}
-${data.writeTest.updatedRange ? `Updated Range: ${data.writeTest.updatedRange}` : ''}
-${data.writeTest.updatedCells ? `Updated Cells: ${data.writeTest.updatedCells}` : ''}
-${data.writeTest.error ? `Error: ${data.writeTest.error}` : ''}` : ''}
-
-${data.confirmRead ? `🔍 CONFIRMATION: A1 contains "${data.confirmRead}"` : ''}
-
 Sample Data:
 ${data.sampleData.map((row, i) => `Row ${i + 1}: [${row.join(', ')}]`).join('\n')}
 
 ${data.message}`;
                     testResults.style.background = '#ecfdf5';
                     testResults.style.borderColor = '#34d399';
-                    showAlert('✅ API key test passed! Check your sheet for "Jo Mama" in A1!', 'success');
+                    showAlert('✅ API key test passed!', 'success');
                 } else {
                     testResults.innerHTML = `❌ API KEY ACCESS TEST FAILED
 
@@ -525,7 +612,7 @@ Response: ${response.status} ${response.statusText}`;
                 testResults.style.display = 'block';
 
             } catch (error) {
-                console.error('Error testing API key:', error);
+                debug('Error testing API key', error);
                 showAlert('Network error during API key test', 'error');
             }
 
@@ -534,6 +621,8 @@ Response: ${response.status} ${response.statusText}`;
 
         // Update access status UI
         function updateAccessStatus() {
+            debug('Updating access status UI', { hasAccess, userApiKey: !!userApiKey, userEmail });
+            
             const statusCard = document.getElementById('accessStatus');
             const apiKeyCard = document.getElementById('apiKeyCard');
 
@@ -552,6 +641,8 @@ Response: ${response.status} ${response.statusText}`;
                 if (userApiKey) {
                     document.getElementById('apiKeyDisplay').textContent = userApiKey;
                     apiKeyCard.style.display = 'block';
+                } else {
+                    debug('Warning: hasAccess=true but no API key provided');
                 }
                 
                 grantBtn.style.display = 'none';
@@ -574,7 +665,6 @@ Response: ${response.status} ${response.statusText}`;
                 revokeBtn.disabled = true;
                 testBtn.style.display = 'none';
                 testKeyBtn.style.display = 'none';
-                if(document.getElementById('testWriteBtn')) document.getElementById('testWriteBtn').style.display = 'none';
                 apiKeyCard.style.display = 'none';
                 
                 // Hide test results
@@ -589,10 +679,10 @@ Response: ${response.status} ${response.statusText}`;
             
             alerts.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
             
-            // Auto-hide after 3 seconds
+            // Auto-hide after 5 seconds
             setTimeout(() => {
                 alerts.innerHTML = '';
-            }, 3000);
+            }, 5000);
         }
 
         // Event listeners
@@ -601,43 +691,37 @@ Response: ${response.status} ${response.statusText}`;
         if (testBtn) testBtn.addEventListener('click', testAccess);
         if (testKeyBtn) testKeyBtn.addEventListener('click', testApiKey);
         if (backHomeBtn) backHomeBtn.addEventListener('click', goToHomeScreen);
-
-        // Make signOutFirebase globally accessible for the event listener
-        window.signOutFirebase = signOutFirebase;
+        if (debugBtn) debugBtn.addEventListener('click', toggleDebug);
 
         // Check for URL parameters (success/error from OAuth)
         window.addEventListener('load', function() {
             const urlParams = new URLSearchParams(window.location.search);
+            debug('Page loaded, checking URL params', Object.fromEntries(urlParams));
             
             if (urlParams.get('success')) {
+                debug('OAuth success detected, updating state');
                 showAlert('✅ Google Sheets access granted successfully!', 'success');
                 
-                // After successful OAuth, update access state
-                hasAccess = true;
-                saveAccessState();
-                
-                // Check server for API key details
+                // Important: Force a check of auth status after successful OAuth
                 setTimeout(() => {
+                    debug('Delayed check of auth status after OAuth success');
                     checkAuthStatus();
-                }, 500);
+                }, 1000); // Increased delay to ensure backend session is ready
                 
                 // Clean URL
                 window.history.replaceState({}, document.title, '/');
                 
             } else if (urlParams.get('error')) {
                 const error = urlParams.get('error');
+                debug('OAuth error detected', { error });
                 showAlert(`❌ Authentication failed: ${error}`, 'error');
                 // Clean URL
                 window.history.replaceState({}, document.title, '/');
             }
         });
-        function saveAccessState() {
-             console.log("Saving access state...");
-        }
 
-        function testWrite() {
-            console.log("Test write function called.");
-        }
+        // Make signOutFirebase globally accessible
+        window.signOutFirebase = signOutFirebase;
     </script>
 </body>
 </html>
