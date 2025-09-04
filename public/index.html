@@ -78,8 +78,6 @@
             transform: none;
             background: #d1d5db;
         }
-        .home-screen { display: block; }
-        .main-screen { display: none; }
         .status-card {
             background: #f8fafc;
             border: 2px solid #e2e8f0;
@@ -155,123 +153,86 @@
             font-size: 0.8rem;
             text-align: left;
             color: #0c4a6e;
+            max-height: 300px;
+            overflow-y: auto;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="homeScreen" class="home-screen">
-            <div class="logo">📊 Sheeter API</div>
-            <p class="subtitle">Transform your Google Sheets into powerful APIs</p>
-            <button id="signInBtn" class="btn btn-primary">
-                🔑 Sign In with Google
-            </button>
-            <div class="loading" id="homeLoading">Signing in...</div>
+        <div class="logo">📊 Sheeter API</div>
+        <p class="subtitle">Transform your Google Sheets into powerful APIs</p>
+        
+        <div id="userInfo" class="user-info">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, Developer!</div>
+            <div style="color: #666; font-size: 0.9rem;">Grant access to manage your Google Sheets API</div>
         </div>
 
-        <div id="mainScreen" class="main-screen">
-            <div class="logo">📊 Sheeter API</div>
-            
-            <div id="userInfo" class="user-info">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, Developer!</div>
-                <div style="color: #666; font-size: 0.9rem;">Sign in to manage your Google Sheets API access</div>
+        <div id="alerts"></div>
+        
+        <!-- Debug Information -->
+        <div id="debugInfo" class="debug-info" style="display: none;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Debug Information:</div>
+            <div id="debugContent"></div>
+        </div>
+
+        <div id="accessStatus" class="status-card">
+            <div class="status-icon">❓</div>
+            <div class="status-text">Checking Access Status...</div>
+            <div class="status-description">
+                Please wait while we check your authentication status
             </div>
+        </div>
 
-            <div id="alerts"></div>
-            
-            <!-- Debug Information -->
-            <div id="debugInfo" class="debug-info" style="display: none;">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">Debug Information:</div>
-                <div id="debugContent"></div>
+        <div id="apiKeyCard" class="status-card" style="display: none;">
+            <div class="status-icon">🔑</div>
+            <div class="status-text">Your Sheeter API Key</div>
+            <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px; margin: 1rem 0; font-family: monospace; word-break: break-all; text-align: left;">
+                <div style="margin-bottom: 0.5rem; font-weight: 600; font-family: sans-serif;">API Key:</div>
+                <div id="apiKeyDisplay" style="color: #059669;"></div>
             </div>
-
-            <div id="accessStatus" class="status-card">
-                <div class="status-icon">❌</div>
-                <div class="status-text">No Google Sheets Access</div>
-                <div class="status-description">
-                    Grant access to your Google Sheets to start creating APIs
-                </div>
+            <div style="color: #666; font-size: 0.9rem; text-align: left;">
+                💡 <strong>Use this key for MCP:</strong><br>
+                <code style="background: #e2e8f0; padding: 2px 4px; border-radius: 3px;">Authorization: Bearer YOUR_API_KEY</code>
             </div>
+        </div>
 
-            <div id="apiKeyCard" class="status-card" style="display: none;">
-                <div class="status-icon">🔑</div>
-                <div class="status-text">Your Sheeter API Key</div>
-                <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px; margin: 1rem 0; font-family: monospace; word-break: break-all; text-align: left;">
-                    <div style="margin-bottom: 0.5rem; font-weight: 600; font-family: sans-serif;">API Key:</div>
-                    <div id="apiKeyDisplay" style="color: #059669;"></div>
-                </div>
-                <div style="color: #666; font-size: 0.9rem; text-align: left;">
-                    💡 <strong>Use this key for MCP:</strong><br>
-                    <code style="background: #e2e8f0; padding: 2px 4px; border-radius: 3px;">Authorization: Bearer YOUR_API_KEY</code>
-                </div>
-            </div>
+        <div id="testResults" class="test-results"></div>
 
-            <div id="testResults" class="test-results"></div>
-
-            <div style="margin: 2rem 0;">
-                <button id="grantBtn" class="btn btn-success">
-                    ✅ Grant Sheets Access
-                </button>
-                <button id="revokeBtn" class="btn btn-disabled" disabled>
-                    ❌ Revoke Access
-                </button>
-                <button id="testBtn" class="btn btn-primary" style="display: none;">
-                    🧪 Test Session
-                </button>
-                <button id="testKeyBtn" class="btn btn-primary" style="display: none;">
-                    🔑 Test API Key
-                </button>
-                <button id="debugBtn" class="btn btn-primary">
-                    🐛 Toggle Debug
-                </button>
-            </div>
-
-            <div class="loading" id="loading">Processing...</div>
-
-            <button class="btn btn-primary" id="backHomeBtn">
-                🏠 Back to Home
+        <div style="margin: 2rem 0;">
+            <button id="grantBtn" class="btn btn-success" style="display: none;">
+                🔑 Sign In & Grant Access
+            </button>
+            <button id="revokeBtn" class="btn btn-disabled" disabled style="display: none;">
+                ❌ Revoke Access
+            </button>
+            <button id="testBtn" class="btn btn-primary" style="display: none;">
+                🧪 Test Session
+            </button>
+            <button id="testKeyBtn" class="btn btn-primary" style="display: none;">
+                🔑 Test API Key
+            </button>
+            <button id="debugBtn" class="btn btn-primary">
+                🐛 Show Debug
             </button>
         </div>
+
+        <div class="loading" id="loading">Processing...</div>
     </div>
 
-    <script type="module">
-        // Import Firebase
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-
-        // Firebase configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyDgGwe16f-_VCo4gkUZWFdtUkp_SgG0JvY",
-            authDomain: "sheeter-api-3db4f.firebaseapp.com",
-            projectId: "sheeter-api-3db4f",
-            storageBucket: "sheeter-api-3db4f.firebasestorage.app",
-            messagingSenderId: "198096954230",
-            appId: "1:198096954230:web:5c74fe71f9470b17239057",
-            measurementId: "G-STSKZP6YF1"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const provider = new GoogleAuthProvider();
-
+    <script>
         // Global variables
         let hasAccess = false;
         let userApiKey = null;
         let userEmail = null;
-        let firebaseUser = null;
         let debugMode = false;
 
         // DOM elements
-        const homeScreen = document.getElementById('homeScreen');
-        const mainScreen = document.getElementById('mainScreen');
-        const signInBtn = document.getElementById('signInBtn');
         const userInfo = document.getElementById('userInfo');
         const grantBtn = document.getElementById('grantBtn');
         const revokeBtn = document.getElementById('revokeBtn');
         const testBtn = document.getElementById('testBtn');
         const testKeyBtn = document.getElementById('testKeyBtn');
-        const backHomeBtn = document.getElementById('backHomeBtn');
         const alerts = document.getElementById('alerts');
         const debugBtn = document.getElementById('debugBtn');
         const debugInfo = document.getElementById('debugInfo');
@@ -296,118 +257,8 @@
                 debug('Current state', {
                     hasAccess,
                     userApiKey: userApiKey ? userApiKey.substring(0, 20) + '...' : null,
-                    userEmail,
-                    firebaseUser: firebaseUser ? firebaseUser.email : null
+                    userEmail
                 });
-            }
-        }
-
-        // Firebase Authentication State Listener
-        onAuthStateChanged(auth, (user) => {
-            firebaseUser = user;
-            debug('Firebase auth state changed', { user: user ? user.email : null });
-            updateUIBasedOnAuth();
-        });
-
-        function updateUIBasedOnAuth() {
-            debug('Updating UI based on auth state');
-            
-            if (firebaseUser) {
-                homeScreen.style.display = 'none';
-                mainScreen.style.display = 'block';
-
-                signInBtn.textContent = '✅ Signed In';
-                signInBtn.onclick = goToMainScreen;
-                
-                userInfo.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <div>
-                            <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, ${firebaseUser.displayName || firebaseUser.email}!</div>
-                            <div style="color: #666; font-size: 0.9rem;">Manage your Google Sheets API access</div>
-                        </div>
-                        <button class="btn btn-danger" id="signOutBtn" style="font-size: 14px; padding: 8px 16px;">
-                            Sign Out
-                        </button>
-                    </div>
-                `;
-                document.getElementById('signOutBtn').addEventListener('click', signOutFirebase);
-                
-                // Check API access status when user is logged in
-                debug('Firebase user logged in, checking backend auth status');
-                checkAuthStatus();
-            } else {
-                homeScreen.style.display = 'block';
-                mainScreen.style.display = 'none';
-
-                signInBtn.textContent = '🔑 Sign In with Google';
-                signInBtn.onclick = signInWithFirebase;
-                
-                userInfo.innerHTML = `
-                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, Developer!</div>
-                    <div style="color: #666; font-size: 0.9rem;">Sign in to manage your Google Sheets API access</div>
-                `;
-            }
-        }
-
-        // Navigation functions
-        function goToMainScreen() {
-            if (!firebaseUser) {
-                showAlert('Please sign in first', 'error');
-                return;
-            }
-            homeScreen.style.display = 'none';
-            mainScreen.style.display = 'block';
-            checkAuthStatus();
-        }
-
-        function goToHomeScreen() {
-            homeScreen.style.display = 'block';
-            mainScreen.style.display = 'none';
-        }
-
-        // Firebase Sign In
-        async function signInWithFirebase() {
-            try {
-                document.getElementById('homeLoading').style.display = 'block';
-                debug('Starting Firebase sign in');
-                
-                const result = await signInWithPopup(auth, provider);
-                firebaseUser = result.user;
-                
-                debug('Firebase sign in successful', { email: firebaseUser.email });
-                showAlert(`✅ Signed in as ${firebaseUser.email}`, 'success');
-                
-            } catch (error) {
-                debug('Firebase sign in error', error);
-                console.error('❌ Firebase sign in error:', error);
-                let errorMessage = 'Sign in failed';
-                
-                if (error.code === 'auth/popup-blocked') {
-                    errorMessage = 'Popup blocked. Please allow popups and try again.';
-                } else if (error.code === 'auth/popup-closed-by-user') {
-                    errorMessage = 'Sign in cancelled.';
-                }
-                
-                showAlert(`❌ ${errorMessage}`, 'error');
-            }
-            
-            document.getElementById('homeLoading').style.display = 'none';
-        }
-
-        // Firebase Sign Out
-        async function signOutFirebase() {
-            try {
-                await signOut(auth);
-                firebaseUser = null;
-                hasAccess = false;
-                userApiKey = null;
-                userEmail = null;
-                debug('Firebase sign out successful');
-                showAlert('✅ Signed out successfully', 'success');
-                goToHomeScreen();
-            } catch (error) {
-                debug('Sign out error', error);
-                showAlert('❌ Sign out failed', 'error');
             }
         }
 
@@ -418,7 +269,7 @@
                 
                 const response = await fetch('/auth/status', {
                     method: 'GET',
-                    credentials: 'include', // Important for session cookies
+                    credentials: 'include',
                     headers: {
                         'Cache-Control': 'no-cache'
                     }
@@ -426,7 +277,8 @@
                 
                 debug('Auth status response', {
                     status: response.status,
-                    statusText: response.statusText
+                    statusText: response.statusText,
+                    headers: Object.fromEntries(response.headers.entries())
                 });
                 
                 if (!response.ok) {
@@ -434,29 +286,26 @@
                 }
                 
                 const data = await response.json();
-                
                 debug('Auth status data received', data);
                 
                 hasAccess = data.hasAccess || data.authenticated;
                 userApiKey = data.apiKey;
                 userEmail = data.userEmail;
                 
-                updateAccessStatus();
+                updateUI();
                 
             } catch (error) {
                 debug('Error checking auth status', error);
                 console.error('Error checking auth status:', error);
                 showAlert(`❌ Error checking status: ${error.message}`, 'error');
+                
+                // Show grant button if we can't check status
+                updateUI();
             }
         }
 
         // Grant access to Google Sheets
         function grantAccess() {
-            if (!firebaseUser) {
-                showAlert('Please sign in with Firebase first', 'error');
-                return;
-            }
-            
             debug('Starting OAuth flow to grant access');
             document.getElementById('loading').style.display = 'block';
             
@@ -485,15 +334,15 @@
                     hasAccess = false;
                     userApiKey = null;
                     userEmail = null;
-                    updateAccessStatus();
-                    showAlert('Access revoked and API key deleted', 'success');
+                    updateUI();
+                    showAlert('✅ Access revoked and API key deleted', 'success');
                 } else {
-                    showAlert('Failed to revoke access', 'error');
+                    showAlert('❌ Failed to revoke access', 'error');
                 }
 
             } catch (error) {
                 debug('Error revoking access', error);
-                showAlert('Error revoking access', 'error');
+                showAlert('❌ Error revoking access', 'error');
             }
 
             document.getElementById('loading').style.display = 'none';
@@ -502,7 +351,7 @@
         // Test Google Sheets access (session-based)
         async function testAccess() {
             if (!hasAccess) {
-                alert('Please grant access first');
+                showAlert('❌ Please grant access first', 'error');
                 return;
             }
 
@@ -548,7 +397,7 @@ Code: ${data.code || 'Unknown'}`;
 
             } catch (error) {
                 debug('Error testing session access', error);
-                showAlert('Network error during test', 'error');
+                showAlert('❌ Network error during test', 'error');
             }
 
             document.getElementById('loading').style.display = 'none';
@@ -557,7 +406,7 @@ Code: ${data.code || 'Unknown'}`;
         // Test API Key access
         async function testApiKey() {
             if (!hasAccess || !userApiKey) {
-                alert('Please grant access first to get an API key');
+                showAlert('❌ Please grant access first to get an API key', 'error');
                 return;
             }
 
@@ -613,20 +462,21 @@ Response: ${response.status} ${response.statusText}`;
 
             } catch (error) {
                 debug('Error testing API key', error);
-                showAlert('Network error during API key test', 'error');
+                showAlert('❌ Network error during API key test', 'error');
             }
 
             document.getElementById('loading').style.display = 'none';
         }
 
-        // Update access status UI
-        function updateAccessStatus() {
-            debug('Updating access status UI', { hasAccess, userApiKey: !!userApiKey, userEmail });
+        // Update UI based on current state
+        function updateUI() {
+            debug('Updating UI', { hasAccess, userApiKey: !!userApiKey, userEmail });
             
             const statusCard = document.getElementById('accessStatus');
             const apiKeyCard = document.getElementById('apiKeyCard');
 
-            if (hasAccess) {
+            if (hasAccess && userApiKey) {
+                // User has full access
                 statusCard.className = 'status-card status-granted';
                 statusCard.innerHTML = `
                     <div class="status-icon">✅</div>
@@ -637,38 +487,48 @@ Response: ${response.status} ${response.statusText}`;
                     </div>
                 `;
                 
+                userInfo.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, ${userEmail || 'User'}!</div>
+                    <div style="color: #666; font-size: 0.9rem;">Your Google Sheets API is ready to use</div>
+                `;
+
                 // Show API key
-                if (userApiKey) {
-                    document.getElementById('apiKeyDisplay').textContent = userApiKey;
-                    apiKeyCard.style.display = 'block';
-                } else {
-                    debug('Warning: hasAccess=true but no API key provided');
-                }
+                document.getElementById('apiKeyDisplay').textContent = userApiKey;
+                apiKeyCard.style.display = 'block';
                 
+                // Show appropriate buttons
                 grantBtn.style.display = 'none';
+                revokeBtn.style.display = 'inline-block';
                 revokeBtn.className = 'btn btn-danger';
                 revokeBtn.disabled = false;
                 testBtn.style.display = 'inline-block';
                 testKeyBtn.style.display = 'inline-block';
+
             } else {
+                // No access - show grant button
                 statusCard.className = 'status-card status-revoked';
                 statusCard.innerHTML = `
                     <div class="status-icon">❌</div>
                     <div class="status-text">No Google Sheets Access</div>
                     <div class="status-description">
-                        Grant access to your Google Sheets to start creating APIs
+                        Click below to sign in with Google and grant access to your sheets
                     </div>
                 `;
                 
+                userInfo.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, Developer!</div>
+                    <div style="color: #666; font-size: 0.9rem;">Grant access to manage your Google Sheets API</div>
+                `;
+
+                // Hide API key and test features
+                apiKeyCard.style.display = 'none';
+                document.getElementById('testResults').style.display = 'none';
+                
+                // Show grant button, hide others
                 grantBtn.style.display = 'inline-block';
-                revokeBtn.className = 'btn btn-disabled';
-                revokeBtn.disabled = true;
+                revokeBtn.style.display = 'none';
                 testBtn.style.display = 'none';
                 testKeyBtn.style.display = 'none';
-                apiKeyCard.style.display = 'none';
-                
-                // Hide test results
-                document.getElementById('testResults').style.display = 'none';
             }
         }
 
@@ -690,10 +550,9 @@ Response: ${response.status} ${response.statusText}`;
         if (revokeBtn) revokeBtn.addEventListener('click', revokeAccess);
         if (testBtn) testBtn.addEventListener('click', testAccess);
         if (testKeyBtn) testKeyBtn.addEventListener('click', testApiKey);
-        if (backHomeBtn) backHomeBtn.addEventListener('click', goToHomeScreen);
         if (debugBtn) debugBtn.addEventListener('click', toggleDebug);
 
-        // Check for URL parameters (success/error from OAuth)
+        // Initialize the page
         window.addEventListener('load', function() {
             const urlParams = new URLSearchParams(window.location.search);
             debug('Page loaded, checking URL params', Object.fromEntries(urlParams));
@@ -702,26 +561,28 @@ Response: ${response.status} ${response.statusText}`;
                 debug('OAuth success detected, updating state');
                 showAlert('✅ Google Sheets access granted successfully!', 'success');
                 
-                // Important: Force a check of auth status after successful OAuth
+                // Clean URL first
+                window.history.replaceState({}, document.title, '/');
+                
+                // Check auth status after OAuth success
                 setTimeout(() => {
                     debug('Delayed check of auth status after OAuth success');
                     checkAuthStatus();
-                }, 1000); // Increased delay to ensure backend session is ready
-                
-                // Clean URL
-                window.history.replaceState({}, document.title, '/');
+                }, 1000);
                 
             } else if (urlParams.get('error')) {
                 const error = urlParams.get('error');
                 debug('OAuth error detected', { error });
                 showAlert(`❌ Authentication failed: ${error}`, 'error');
-                // Clean URL
                 window.history.replaceState({}, document.title, '/');
+                
+                // Still check status in case of partial success
+                checkAuthStatus();
+            } else {
+                // Normal page load - check current status
+                checkAuthStatus();
             }
         });
-
-        // Make signOutFirebase globally accessible
-        window.signOutFirebase = signOutFirebase;
     </script>
 </body>
 </html>
