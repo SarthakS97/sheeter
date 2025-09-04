@@ -179,6 +179,12 @@ async function authenticateApiKey(req, res, next) {
 
 // Debug configuration on startup
 console.log('🔧 Configuration Status:');
+if (!ENCRYPTION_KEY || Buffer.from(ENCRYPTION_KEY, 'base64').length !== 32) {
+    console.error('❌ ERROR: Invalid ENCRYPTION_KEY. Please generate a new 32-byte key.');
+    console.error('💡 To fix, run this command in your terminal to generate a valid key:');
+    console.error("  node -e \"console.log(crypto.randomBytes(32).toString('base64'));\"");
+    console.error('  Then update the ENCRYPTION_KEY in your .env file and restart the server.');
+}
 console.log('📍 Google OAuth configured:', !!(CLIENT_ID && CLIENT_SECRET));
 console.log('🔐 Encryption configured:', !!ENCRYPTION_KEY);
 console.log('🔥 Firebase configured:', !!process.env.FIREBASE_PROJECT_ID);
