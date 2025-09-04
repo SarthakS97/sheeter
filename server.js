@@ -589,7 +589,454 @@ app.get('/api/test-key', authenticateApiKey, async (req, res) => {
     }
 });
 
-// All other Sheets API endpoints remain the same but use authenticateApiKey...
+// --- SHEETS API ENDPOINTS ---
+
+/**
+ * Create a new Google Spreadsheet
+ */
+app.post('/api/sheets/create', authenticateApiKey, async (req, res) => {
+    try {
+        const { title } = req.body;
+        if (!title) {
+            return res.status(400).json({ error: 'Spreadsheet title is required.' });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.create({
+            resource: {
+                properties: {
+                    title: title
+                }
+            }
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully created spreadsheet: "${title}"`,
+            spreadsheetId: response.data.spreadsheetId,
+            spreadsheetUrl: response.data.spreadsheetUrl
+        });
+
+    } catch (error) {
+        console.error('❌ Create spreadsheet failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Read values from a single range
+ */
+app.get('/api/sheets/:sheetId', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { range = 'A:Z', majorDimension = 'ROWS', valueRenderOption = 'FORMATTED_VALUE' } = req.query;
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: sheetId,
+            range: range,
+            majorDimension: majorDimension,
+            valueRenderOption: valueRenderOption
+        });
+
+        const rows = response.data.values || [];
+        const headers = rows[0] || [];
+        const data = rows.slice(1).map(row => {
+            const obj = {};
+            headers.forEach((header, index) => {
+                obj[header] = row[index] || '';
+            });
+            return obj;
+        });
+
+        res.json({
+            success: true,
+            range: response.data.range,
+            majorDimension: response.data.majorDimension,
+            values: response.data.values || [],
+            data: data,
+            headers: headers,
+            rowCount: data.length
+        });
+
+    } catch (error) {
+        console.error('❌ Read sheet failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Read multiple ranges (batch get)
+ */
+app.post('/api/sheets/:sheetId/batch-get', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { ranges, majorDimension = 'ROWS', valueRenderOption = 'FORMATTED_VALUE' } = req.body;
+
+        if (!ranges || !Array.isArray(ranges)) {
+            return res.status(400).json({ error: 'Ranges array is required.' });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.values.batchGet({
+            spreadsheetId: sheetId,
+            ranges: ranges,
+            majorDimension: majorDimension,
+            valueRenderOption: valueRenderOption
+        });
+
+        res.json({
+            success: true,
+            spreadsheetId: response.data.spreadsheetId,
+            valueRanges: response.data.valueRanges
+        });
+
+    } catch (error) {
+        console.error('❌ Batch get failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Write to a single range
+ */
+app.put('/api/sheets/:sheetId/values', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { range, values, valueInputOption = 'USER_ENTERED', majorDimension = 'ROWS' } = req.body;
+
+        if (!range || !values || !Array.isArray(values)) {
+            return res.status(400).json({ error: 'Range and values (array of arrays) are required.' });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.values.update({
+            spreadsheetId: sheetId,
+            range: range,
+            valueInputOption: valueInputOption,
+            requestBody: {
+                values: values,
+                majorDimension: majorDimension
+            }
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully updated range "${response.data.updatedRange}"`,
+            spreadsheetId: response.data.spreadsheetId,
+            updatedRange: response.data.updatedRange,
+            updatedRows: response.data.updatedRows,
+            updatedColumns: response.data.updatedColumns,
+            updatedCells: response.data.updatedCells
+        });
+
+    } catch (error) {
+        console.error('❌ Update values failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Write to multiple ranges (batch update)
+ */
+app.put('/api/sheets/:sheetId/batch-update', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { data, valueInputOption = 'USER_ENTERED' } = req.body;
+
+        if (!data || !Array.isArray(data)) {
+            return res.status(400).json({ 
+                error: 'Data array is required. Each item should have range and values properties.' 
+            });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: sheetId,
+            requestBody: {
+                data: data,
+                valueInputOption: valueInputOption
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Batch update successful',
+            spreadsheetId: response.data.spreadsheetId,
+            totalUpdatedRows: response.data.totalUpdatedRows,
+            totalUpdatedColumns: response.data.totalUpdatedColumns,
+            totalUpdatedCells: response.data.totalUpdatedCells,
+            totalUpdatedSheets: response.data.totalUpdatedSheets,
+            responses: response.data.responses
+        });
+
+    } catch (error) {
+        console.error('❌ Batch update failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Append values to a sheet
+ */
+app.post('/api/sheets/:sheetId/append', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { range = 'A1', values, valueInputOption = 'USER_ENTERED', insertDataOption = 'OVERWRITE' } = req.body;
+
+        if (!values || !Array.isArray(values)) {
+            return res.status(400).json({ error: 'Values must be a valid array of arrays.' });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.values.append({
+            spreadsheetId: sheetId,
+            range: range,
+            valueInputOption: valueInputOption,
+            insertDataOption: insertDataOption,
+            requestBody: {
+                values: values
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Data successfully appended',
+            spreadsheetId: response.data.spreadsheetId,
+            tableRange: response.data.tableRange,
+            updates: response.data.updates
+        });
+
+    } catch (error) {
+        console.error('❌ Append data failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Batch update spreadsheet (for complex operations like find/replace, formatting, etc.)
+ */
+app.post('/api/sheets/:sheetId/batch-update-spreadsheet', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { requests } = req.body;
+
+        if (!requests || !Array.isArray(requests)) {
+            return res.status(400).json({ error: 'Requests must be a valid array.' });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: sheetId,
+            requestBody: {
+                requests: requests
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Batch update successful',
+            spreadsheetId: response.data.spreadsheetId,
+            replies: response.data.replies
+        });
+
+    } catch (error) {
+        console.error('❌ Batch update spreadsheet failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Clear values from a range
+ */
+app.delete('/api/sheets/:sheetId/values', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { range } = req.query;
+
+        if (!range) {
+            return res.status(400).json({ error: 'Range query parameter is required.' });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.values.clear({
+            spreadsheetId: sheetId,
+            range: range
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully cleared range "${range}"`,
+            spreadsheetId: response.data.spreadsheetId,
+            clearedRange: response.data.clearedRange
+        });
+
+    } catch (error) {
+        console.error('❌ Clear values failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Delete rows from a sheet
+ */
+app.delete('/api/sheets/:sheetId/rows', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+        const { startIndex, endIndex, sheetTabId = 0 } = req.query;
+
+        if (startIndex === undefined || endIndex === undefined) {
+            return res.status(400).json({ 
+                error: 'startIndex and endIndex query parameters are required.' 
+            });
+        }
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const request = {
+            deleteDimension: {
+                range: {
+                    sheetId: parseInt(sheetTabId, 10),
+                    dimension: 'ROWS',
+                    startIndex: parseInt(startIndex, 10),
+                    endIndex: parseInt(endIndex, 10)
+                }
+            }
+        };
+
+        const response = await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: sheetId,
+            requestBody: { requests: [request] }
+        });
+
+        res.json({
+            success: true,
+            message: `Successfully deleted rows from index ${startIndex} to ${endIndex}`,
+            replies: response.data.replies
+        });
+
+    } catch (error) {
+        console.error('❌ Delete rows failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Get spreadsheet metadata
+ */
+app.get('/api/sheets/:sheetId/metadata', authenticateApiKey, async (req, res) => {
+    try {
+        const { sheetId } = req.params;
+
+        const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+        userOAuth2Client.setCredentials({
+            access_token: req.user.accessToken,
+            refresh_token: req.user.refreshToken
+        });
+
+        const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
+        const response = await sheets.spreadsheets.get({
+            spreadsheetId: sheetId
+        });
+
+        res.json({
+            success: true,
+            spreadsheetId: response.data.spreadsheetId,
+            properties: response.data.properties,
+            sheets: response.data.sheets.map(sheet => ({
+                sheetId: sheet.properties.sheetId,
+                title: sheet.properties.title,
+                index: sheet.properties.index,
+                sheetType: sheet.properties.sheetType,
+                gridProperties: sheet.properties.gridProperties
+            }))
+        });
+
+    } catch (error) {
+        console.error('❌ Get metadata failed:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 // Error handlers
 app.use((err, req, res, next) => {
