@@ -35,7 +35,10 @@ app.use(session({
 // Google OAuth Configuration
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = `http://localhost:${PORT}/auth/callback`;
+const BASE_URL = process.env.NODE_ENV === 'production' 
+    ? 'https://sheeter-lb5v.onrender.com' 
+    : `http://localhost:${PORT}`;
+const REDIRECT_URI = `${BASE_URL}/auth/callback`;
 const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/userinfo.email'];
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
