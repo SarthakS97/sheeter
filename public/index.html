@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sheeter API</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { 
+            background: white; 
+            padding: 2rem; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-width: 600px;
+            width: 90%;
+            text-align: center;
+        }
+        .logo { 
+            font-size: 3rem; 
+            font-weight: bold; 
+            color: #667eea; 
+            margin-bottom: 1rem; 
+        }
+        .subtitle { 
+            color: #666; 
+            margin-bottom: 2rem; 
+            font-size: 1.1rem;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 0.5rem;
+            min-width: 140px;
+        }
+        .btn-primary { 
+            background: #4285f4; 
+            color: white;
+        }
+        .btn-primary:hover { 
+            background: #3367d6; 
+            transform: translateY(-1px);
+        }
+        .btn-success { 
+            background: #34d399; 
+            color: white;
+        }
+        .btn-success:hover { 
+            background: #10b981; 
+            transform: translateY(-1px);
+        }
+        .btn-danger { 
+            background: #ef4444; 
+            color: white;
+        }
+        .btn-danger:hover { 
+            background: #dc2626; 
+            transform: translateY(-1px);
+        }
+        .btn-disabled { 
+            background: #d1d5db; 
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .btn-disabled:hover { 
+            transform: none;
+            background: #d1d5db;
+        }
+        .home-screen { display: block; }
+        .main-screen { display: none; }
+        .status-card {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        .status-granted {
+            border-color: #34d399;
+            background: #ecfdf5;
+        }
+        .status-revoked {
+            border-color: #ef4444;
+            background: #fef2f2;
+        }
+        .status-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        .status-text {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .status-description {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .user-info {
+            background: #f1f5f9;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .loading {
+            display: none;
+            color: #667eea;
+            margin: 1rem 0;
+        }
+        .test-results {
+            display: none;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            text-align: left;
+            font-family: monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+        }
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        .alert-success {
+            background: #ecfdf5;
+            border: 1px solid #34d399;
+            color: #065f46;
+        }
+        .alert-error {
+            background: #fef2f2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="homeScreen" class="home-screen">
+            <div class="logo">📊 Sheeter API</div>
+            <p class="subtitle">Transform your Google Sheets into powerful APIs</p>
+            <button id="signInBtn" class="btn btn-primary">
+                🔑 Sign In with Google
+            </button>
+            <div class="loading" id="homeLoading">Signing in...</div>
+        </div>
+
+        <div id="mainScreen" class="main-screen">
+            <div class="logo">📊 Sheeter API</div>
+            
+            <div id="userInfo" class="user-info">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, Developer!</div>
+                <div style="color: #666; font-size: 0.9rem;">Sign in to manage your Google Sheets API access</div>
+            </div>
+
+            <div id="alerts"></div>
+
+            <div id="accessStatus" class="status-card">
+                <div class="status-icon">❌</div>
+                <div class="status-text">No Google Sheets Access</div>
+                <div class="status-description">
+                    Grant access to your Google Sheets to start creating APIs
+                </div>
+            </div>
+
+            <div id="apiKeyCard" class="status-card" style="display: none;">
+                <div class="status-icon">🔑</div>
+                <div class="status-text">Your Sheeter API Key</div>
+                <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px; margin: 1rem 0; font-family: monospace; word-break: break-all; text-align: left;">
+                    <div style="margin-bottom: 0.5rem; font-weight: 600; font-family: sans-serif;">API Key:</div>
+                    <div id="apiKeyDisplay" style="color: #059669;"></div>
+                </div>
+                <div style="color: #666; font-size: 0.9rem; text-align: left;">
+                    💡 <strong>Use this key for MCP:</strong><br>
+                    <code style="background: #e2e8f0; padding: 2px 4px; border-radius: 3px;">Authorization: Bearer YOUR_API_KEY</code>
+                </div>
+            </div>
+
+            <div id="testResults" class="test-results"></div>
+
+            <div style="margin: 2rem 0;">
+                <button id="grantBtn" class="btn btn-success">
+                    ✅ Grant Sheets Access
+                </button>
+                <button id="revokeBtn" class="btn btn-disabled" disabled>
+                    ❌ Revoke Access
+                </button>
+                <button id="testBtn" class="btn btn-primary" style="display: none;">
+                    🧪 Test Session
+                </button>
+                <button id="testKeyBtn" class="btn btn-primary" style="display: none;">
+                    🔑 Test API Key
+                </button>
+            </div>
+
+            <div class="loading" id="loading">Processing...</div>
+
+            <button class="btn btn-primary" id="backHomeBtn">
+                🏠 Back to Home
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Firebase
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDgGwe16f-_VCo4gkUZWFdtUkp_SgG0JvY",
+            authDomain: "sheeter-api-3db4f.firebaseapp.com",
+            projectId: "sheeter-api-3db4f",
+            storageBucket: "sheeter-api-3db4f.firebasestorage.app",
+            messagingSenderId: "198096954230",
+            appId: "1:198096954230:web:5c74fe71f9470b17239057",
+            measurementId: "G-STSKZP6YF1"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // Global variables
+        let hasAccess = false;
+        let userApiKey = null;
+        let userEmail = null;
+        let firebaseUser = null;
+
+        // DOM elements
+        const homeScreen = document.getElementById('homeScreen');
+        const mainScreen = document.getElementById('mainScreen');
+        const signInBtn = document.getElementById('signInBtn');
+        const userInfo = document.getElementById('userInfo');
+        const grantBtn = document.getElementById('grantBtn');
+        const revokeBtn = document.getElementById('revokeBtn');
+        const testBtn = document.getElementById('testBtn');
+        const testKeyBtn = document.getElementById('testKeyBtn');
+        const backHomeBtn = document.getElementById('backHomeBtn');
+        const alerts = document.getElementById('alerts');
+        const testWriteBtn = document.getElementById('testWriteBtn');
+
+        // Firebase Authentication State Listener
+        onAuthStateChanged(auth, (user) => {
+            firebaseUser = user;
+            updateUIBasedOnAuth();
+        });
+
+        function updateUIBasedOnAuth() {
+            if (firebaseUser) {
+                // If user is logged in, show the main screen
+                homeScreen.style.display = 'none';
+                mainScreen.style.display = 'block';
+
+                signInBtn.textContent = '✅ Signed In';
+                signInBtn.onclick = goToMainScreen;
+                
+                userInfo.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, ${firebaseUser.displayName || firebaseUser.email}!</div>
+                            <div style="color: #666; font-size: 0.9rem;">Manage your Google Sheets API access</div>
+                        </div>
+                        <button class="btn btn-danger" id="signOutBtn" style="font-size: 14px; padding: 8px 16px;">
+                            Sign Out
+                        </button>
+                    </div>
+                `;
+                document.getElementById('signOutBtn').addEventListener('click', signOutFirebase);
+                checkAuthStatus(); // Check the API access status when the user is logged in
+            } else {
+                // If no user is logged in, show the home screen
+                homeScreen.style.display = 'block';
+                mainScreen.style.display = 'none';
+
+                signInBtn.textContent = '🔑 Sign In with Google';
+                signInBtn.onclick = signInWithFirebase;
+                
+                userInfo.innerHTML = `
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Welcome, Developer!</div>
+                    <div style="color: #666; font-size: 0.9rem;">Sign in to manage your Google Sheets API access</div>
+                `;
+            }
+        }
+
+        // Navigation functions
+        function goToMainScreen() {
+            if (!firebaseUser) {
+                showAlert('Please sign in first', 'error');
+                return;
+            }
+            homeScreen.style.display = 'none';
+            mainScreen.style.display = 'block';
+            checkAuthStatus();
+        }
+
+        function goToHomeScreen() {
+            homeScreen.style.display = 'block';
+            mainScreen.style.display = 'none';
+        }
+
+        // Firebase Sign In
+        async function signInWithFirebase() {
+            try {
+                document.getElementById('homeLoading').style.display = 'block';
+                
+                const result = await signInWithPopup(auth, provider);
+                firebaseUser = result.user;
+                
+                console.log('✅ Firebase sign in successful:', firebaseUser.email);
+                showAlert(`✅ Signed in as ${firebaseUser.email}`, 'success');
+                
+            } catch (error) {
+                console.error('❌ Firebase sign in error:', error);
+                let errorMessage = 'Sign in failed';
+                
+                if (error.code === 'auth/popup-blocked') {
+                    errorMessage = 'Popup blocked. Please allow popups and try again.';
+                } else if (error.code === 'auth/popup-closed-by-user') {
+                    errorMessage = 'Sign in cancelled.';
+                }
+                
+                showAlert(`❌ ${errorMessage}`, 'error');
+            }
+            
+            document.getElementById('homeLoading').style.display = 'none';
+        }
+
+        // Firebase Sign Out
+        async function signOutFirebase() {
+            try {
+                await signOut(auth);
+                firebaseUser = null;
+                hasAccess = false;
+                userApiKey = null;
+                userEmail = null;
+                console.log('✅ Firebase sign out successful');
+                showAlert('✅ Signed out successfully', 'success');
+                goToHomeScreen();
+            } catch (error) {
+                console.error('❌ Sign out error:', error);
+                showAlert('❌ Sign out failed', 'error');
+            }
+        }
+
+        // Check authentication status
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/auth/status');
+                const data = await response.json();
+                hasAccess = data.hasAccess;
+                userApiKey = data.apiKey;
+                userEmail = data.userEmail;
+                updateAccessStatus();
+            } catch (error) {
+                console.error('Error checking auth status:', error);
+            }
+        }
+
+        // Grant access to Google Sheets
+        function grantAccess() {
+            if (!firebaseUser) {
+                showAlert('Please sign in with Firebase first', 'error');
+                return;
+            }
+            
+            document.getElementById('loading').style.display = 'block';
+            window.location.href = '/auth/google';
+        }
+
+        // Revoke access
+        async function revokeAccess() {
+            if (!hasAccess) return;
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                
+                const response = await fetch('/auth/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    hasAccess = false;
+                    userApiKey = null;
+                    userEmail = null;
+                    updateAccessStatus();
+                    showAlert('Access revoked and API key deleted', 'success');
+                } else {
+                    showAlert('Failed to revoke access', 'error');
+                }
+
+            } catch (error) {
+                console.error('Error revoking access:', error);
+                showAlert('Error revoking access', 'error');
+            }
+
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Test Google Sheets access (session-based)
+        async function testAccess() {
+            if (!hasAccess) {
+                alert('Please grant access first');
+                return;
+            }
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                
+                const response = await fetch('/api/test');
+                const data = await response.json();
+
+                const testResults = document.getElementById('testResults');
+                
+                if (data.success) {
+                    testResults.innerHTML = `✅ SESSION ACCESS TEST PASSED
+
+Sheet Name: ${data.sheetName}
+Sheet ID: ${data.sheetId}
+Rows Found: ${data.rowCount}
+Authenticated As: ${data.userEmail}
+API Key: ${data.apiKey}
+
+Sample Data:
+${data.sampleData.map((row, i) => `Row ${i + 1}: [${row.join(', ')}]`).join('\n')}
+
+${data.message}`;
+                    testResults.style.background = '#ecfdf5';
+                    testResults.style.borderColor = '#34d399';
+                    showAlert('✅ Session access test passed!', 'success');
+                } else {
+                    testResults.innerHTML = `❌ SESSION ACCESS TEST FAILED
+
+Error: ${data.error}
+Code: ${data.code || 'Unknown'}`;
+                    testResults.style.background = '#fef2f2';
+                    testResults.style.borderColor = '#ef4444';
+                    showAlert('❌ Session test failed', 'error');
+                }
+
+                testResults.style.display = 'block';
+
+            } catch (error) {
+                console.error('Error testing access:', error);
+                showAlert('Network error during test', 'error');
+            }
+
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Test API Key access (what MCP will use)
+        async function testApiKey() {
+            if (!hasAccess || !userApiKey) {
+                alert('Please grant access first to get an API key');
+                return;
+            }
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                
+                const response = await fetch('/api/test-key', {
+                    headers: {
+                        'Authorization': `Bearer ${userApiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+
+                const testResults = document.getElementById('testResults');
+                
+                if (data.success) {
+                    testResults.innerHTML = `✅ API KEY ACCESS TEST PASSED
+
+🔑 This is how MCP will access your sheets!
+
+Sheet Name: ${data.sheetName}
+Sheet ID: ${data.sheetId}
+Rows Found: ${data.rowCount}
+Authenticated As: ${data.authenticatedAs}
+
+📝 WRITE TEST: ${data.writeTest ? (data.writeTest.success ? '✅ PASSED' : '❌ FAILED') : '❓ NOT STARTED'}
+${data.writeTest ? `
+Message: ${data.writeTest.message}
+${data.writeTest.updatedRange ? `Updated Range: ${data.writeTest.updatedRange}` : ''}
+${data.writeTest.updatedCells ? `Updated Cells: ${data.writeTest.updatedCells}` : ''}
+${data.writeTest.error ? `Error: ${data.writeTest.error}` : ''}` : ''}
+
+${data.confirmRead ? `🔍 CONFIRMATION: A1 contains "${data.confirmRead}"` : ''}
+
+Sample Data:
+${data.sampleData.map((row, i) => `Row ${i + 1}: [${row.join(', ')}]`).join('\n')}
+
+${data.message}`;
+                    testResults.style.background = '#ecfdf5';
+                    testResults.style.borderColor = '#34d399';
+                    showAlert('✅ API key test passed! Check your sheet for "Jo Mama" in A1!', 'success');
+                } else {
+                    testResults.innerHTML = `❌ API KEY ACCESS TEST FAILED
+
+Error: ${data.error}
+Response: ${response.status} ${response.statusText}`;
+                    testResults.style.background = '#fef2f2';
+                    testResults.style.borderColor = '#ef4444';
+                    showAlert('❌ API key test failed', 'error');
+                }
+
+                testResults.style.display = 'block';
+
+            } catch (error) {
+                console.error('Error testing API key:', error);
+                showAlert('Network error during API key test', 'error');
+            }
+
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // Update access status UI
+        function updateAccessStatus() {
+            const statusCard = document.getElementById('accessStatus');
+            const apiKeyCard = document.getElementById('apiKeyCard');
+
+            if (hasAccess) {
+                statusCard.className = 'status-card status-granted';
+                statusCard.innerHTML = `
+                    <div class="status-icon">✅</div>
+                    <div class="status-text">Google Sheets Access Granted</div>
+                    <div class="status-description">
+                        Authenticated as: ${userEmail || 'Unknown'}<br>
+                        You can now use your API key to access sheets
+                    </div>
+                `;
+                
+                // Show API key
+                if (userApiKey) {
+                    document.getElementById('apiKeyDisplay').textContent = userApiKey;
+                    apiKeyCard.style.display = 'block';
+                }
+                
+                grantBtn.style.display = 'none';
+                revokeBtn.className = 'btn btn-danger';
+                revokeBtn.disabled = false;
+                testBtn.style.display = 'inline-block';
+                testKeyBtn.style.display = 'inline-block';
+            } else {
+                statusCard.className = 'status-card status-revoked';
+                statusCard.innerHTML = `
+                    <div class="status-icon">❌</div>
+                    <div class="status-text">No Google Sheets Access</div>
+                    <div class="status-description">
+                        Grant access to your Google Sheets to start creating APIs
+                    </div>
+                `;
+                
+                grantBtn.style.display = 'inline-block';
+                revokeBtn.className = 'btn btn-disabled';
+                revokeBtn.disabled = true;
+                testBtn.style.display = 'none';
+                testKeyBtn.style.display = 'none';
+                if(document.getElementById('testWriteBtn')) document.getElementById('testWriteBtn').style.display = 'none';
+                apiKeyCard.style.display = 'none';
+                
+                // Hide test results
+                document.getElementById('testResults').style.display = 'none';
+            }
+        }
+
+        // Show alerts
+        function showAlert(message, type) {
+            const alerts = document.getElementById('alerts');
+            const alertClass = type === 'success' ? 'alert-success' : 'alert-error';
+            
+            alerts.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
+            
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                alerts.innerHTML = '';
+            }, 3000);
+        }
+
+        // Event listeners
+        if (grantBtn) grantBtn.addEventListener('click', grantAccess);
+        if (revokeBtn) revokeBtn.addEventListener('click', revokeAccess);
+        if (testBtn) testBtn.addEventListener('click', testAccess);
+        if (testKeyBtn) testKeyBtn.addEventListener('click', testApiKey);
+        if (backHomeBtn) backHomeBtn.addEventListener('click', goToHomeScreen);
+
+        // Make signOutFirebase globally accessible for the event listener
+        window.signOutFirebase = signOutFirebase;
+
+        // Check for URL parameters (success/error from OAuth)
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            if (urlParams.get('success')) {
+                showAlert('✅ Google Sheets access granted successfully!', 'success');
+                
+                // After successful OAuth, update access state
+                hasAccess = true;
+                saveAccessState();
+                
+                // Check server for API key details
+                setTimeout(() => {
+                    checkAuthStatus();
+                }, 500);
+                
+                // Clean URL
+                window.history.replaceState({}, document.title, '/');
+                
+            } else if (urlParams.get('error')) {
+                const error = urlParams.get('error');
+                showAlert(`❌ Authentication failed: ${error}`, 'error');
+                // Clean URL
+                window.history.replaceState({}, document.title, '/');
+            }
+        });
+        function saveAccessState() {
+             console.log("Saving access state...");
+        }
+
+        function testWrite() {
+            console.log("Test write function called.");
+        }
+    </script>
+</body>
+</html>
