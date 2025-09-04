@@ -48,8 +48,8 @@ const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_U
 // Encryption functions
 function encrypt(text) {
     const key = Buffer.from(ENCRYPTION_KEY, 'base64');
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher('aes-256-cbc', key);
+    const iv = crypto.randomBytes(16); // Generate a new IV for each encryption
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     return {
@@ -60,7 +60,8 @@ function encrypt(text) {
 
 function decrypt(encryptedData) {
     const key = Buffer.from(ENCRYPTION_KEY, 'base64');
-    const decipher = crypto.createDecipher('aes-256-cbc', key);
+    const iv = Buffer.from(encryptedData.iv, 'hex'); // Get the IV from the encrypted data
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
@@ -388,7 +389,7 @@ app.get('/api/sheets/:sheetId', authenticateApiKey, async (req, res) => {
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
-            refresh_token: req.user.refreshToken
+            refreshToken: req.user.refreshToken
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
@@ -435,7 +436,7 @@ app.post('/api/test-write', authenticateApiKey, async (req, res) => {
         const userOAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
         userOAuth2Client.setCredentials({
             access_token: req.user.accessToken,
-            refresh_token: req.user.refreshToken
+            refreshToken: req.user.refreshToken
         });
 
         const sheets = google.sheets({ version: 'v4', auth: userOAuth2Client });
