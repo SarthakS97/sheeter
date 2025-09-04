@@ -49,21 +49,18 @@ const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_U
 function encrypt(text) {
     const key = Buffer.from(ENCRYPTION_KEY, 'base64');
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher('aes-256-gcm', key);
+    const cipher = crypto.createCipher('aes-256-cbc', key);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    const authTag = cipher.getAuthTag();
     return {
         encrypted,
-        iv: iv.toString('hex'),
-        authTag: authTag.toString('hex')
+        iv: iv.toString('hex')
     };
 }
 
 function decrypt(encryptedData) {
     const key = Buffer.from(ENCRYPTION_KEY, 'base64');
-    const decipher = crypto.createDecipher('aes-256-gcm', key);
-    decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+    const decipher = crypto.createDecipher('aes-256-cbc', key);
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return decrypted;
