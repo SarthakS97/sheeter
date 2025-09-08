@@ -11,6 +11,9 @@ Transform your Google Sheets into powerful, secure APIs in minutes. No Google Cl
 
 - If I had more time: Get the site verified by Google (Usually takes 3-5 weeks)
 
+- Smithery.ai link: (https://smithery.ai/server/@SarthakS97/sheeter-mcp-server)
+
+
 **Live API:** https://sheeter-2.onrender.com
 
 ## Why Sheeter Exists
