@@ -3,13 +3,13 @@
 Transform your Google Sheets into powerful, secure APIs in minutes. No Google Cloud Console setup required.
 
 # Hackathon Details:
-- **Creator Name: Sarthak S
+- Creator Name: Sarthak S
 
-- **Theme Addressed: Theme 2
+- Theme Addressed: Theme 2
 
-- **Demo Video Link: (https://youtu.be/MWhGa3dFcsU)
+- Demo Video Link: (https://youtu.be/MWhGa3dFcsU)
 
-- **If I had more time: Get the site verified by Google (Usually takes 3-5 weeks)
+- If I had more time: Get the site verified by Google (Usually takes 3-5 weeks)
 
 **Live API:** https://sheeter-2.onrender.com
 
